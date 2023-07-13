@@ -77,8 +77,8 @@ function Enum-Env {
 
 function Enum-InstalledSoftware {
     Write-Title $MyInvocation.MyCommand.Name
-    Get-ItemProperty "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | select displayname
-    Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" | select displayname
+    Get-ItemProperty "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | select displayname | Out-String
+    Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" | select displayname | Out-String
 }
 
 function Enum-PowerShellHistory {
@@ -89,13 +89,64 @@ function Enum-PowerShellHistory {
 }
 
 function Enum-PasswordFromRegistry {
-    Get-ChildItem "HKCU:\Software\ORL\WinVNC3\Password" -ErrorAction SilentlyContinue
-    Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon" -ErrorAction SilentlyContinue
-    Get-ChildItem "HKLM:\SYSTEM\Current\ControlSet\Services\SNMP" -ErrorAction SilentlyContinue
-    Get-ChildItem "HKCU:\Software\SimonTatham\PuTTY\Sessions" -ErrorAction SilentlyContinue
+    Write-Title $MyInvocation.MyCommand.Name
+    $Paths = @(
+      "HKCU:\Software\ORL\WinVNC3\Password",
+      "HKLM:\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon",
+      "HKLM:\SYSTEM\Current\ControlSet\Services\SNMP",
+      "HKCU:\Software\SimonTatham\PuTTY\Sessions"
+    )
+    
+    $Childlen = @()
+
+    $Paths | ForEach-Object {
+      Write-Host $_
+      Get-ItemProperty $_ -ErrorAction SilentlyContinue | Select-Object * -Exclude "PS*" | Out-String
+    }
+}
+
+function Search-LDAP {
+  param(
+    [string]$Query
+  )
+  if(-not (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain) {
+    Write-Host "This computer is not in domain"
+    return
+  }
+  #Primary Domain Controller
+  $Pdc = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).PdcRoleOwner.Name
+  #DistinguishedName
+  $Dn = ([adsi]'').distinguishedName
+
+  $LdapString = "LDAP://$Pdc/$Dn"
+
+  $DirEntry = New-Object System.DirectoryServices.DirectoryEntry($LdapString)
+  $DirSearcher = New-Object System.DirectoryServices.DirectorySearcher($DirEntry, $Query)
+  #User Filter
+  $result = $DirSearcher.FindAll()
+
+  Foreach($obj in $result) {
+    Write-Host $obj.Properties["samaccountname"]
+    Write-Host "------------------------------------------"
+  }
+}
+function Enum-ASREPRoastableUser {
+    Write-Title $MyInvocation.MyCommand.Name
+    Search-LDAP("(&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))")
+}
+function Enum-KerberoastableUser {
+    Write-Title $MyInvocation.MyCommand.Name
+    Search-LDAP("(&(samAccountType=805306368)(servicePrincipalName=*)(!(samAccountName=krbtgt))(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))")
+
 }
 
 function Invoke-AllChecks {
+    if(-not [System.Environment]::Is64BitProcess) {
+      Write-Host "Current process is not 64bit process."
+      Write-Host "please run '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ep bypass' in cmd before."
+      Write-Host "or '$Env:SystemRoot\sysnative\WindowsPowerShell\v1.0\powershell.exe -ep bypass' in PowerShell."
+      return
+    }
     Enum-SystemInfo
     Enum-UserInfo
     Enum-LocalUsers
@@ -106,4 +157,7 @@ function Invoke-AllChecks {
     Enum-Env
     Enum-PowerShellHistory
     Enum-InstalledSoftware
+    Enum-PasswordFromRegistry
+    Enum-ASREPRoastableUser
+    Enum-KerberoastableUser
 }
