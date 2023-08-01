@@ -130,6 +130,21 @@ function Search-LDAP {
     Write-Host "------------------------------------------"
   }
 }
+
+function Enum-AlwaysInstallElevated {
+  Write-Title $MyInvocation.MyCommand.Name
+  reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+  reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+}
+
+function Enum-ScheduledTask {
+  Write-Title $MyInvocation.MyCommand.Name
+
+  Get-ScheduledTask | Where-Object {
+    ($_.Author -inotlike "Microsoft*") -and ($_.Author -ne $null )
+  } | select TaskName,Author -ExpandProperty actions | fl
+}
+
 function Enum-ASREPRoastableUser {
     Write-Title $MyInvocation.MyCommand.Name
     Search-LDAP("(&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))")
@@ -158,6 +173,7 @@ function Invoke-AllChecks {
     Enum-PowerShellHistory
     Enum-InstalledSoftware
     Enum-PasswordFromRegistry
+    Enum-AlwaysInstallElevated
     Enum-ASREPRoastableUser
     Enum-KerberoastableUser
 }
